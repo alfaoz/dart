@@ -1,10 +1,10 @@
 # DART | Data Access and Reformatting Tool
 
 **Rock your CSVs!**  
-DART is a modern, cross-platform desktop application built with PySide6 that lets you load, view, filter, sort, and export CSV data with ease. With advanced filtering commands, a sleek dark mode, and a rock‑inspired version naming scheme, DART turns data reformatting into a head-banging experience.
+DART is a modern, cross-platform desktop application built with PySide6 that lets you load, view, filter, sort, and export CSV data with ease. With advanced filtering commands DART turns data reformatting into a head-banging experience!
 
 ![DART Screenshot](screenshot.png)  
-*DART in action – filtering and sorting CSV data with style!*
+*DART in action*
 
 ---
 
