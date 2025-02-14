@@ -2,8 +2,9 @@ import sys
 import csv
 import json
 import re
-from PySide6.QtCore import QSortFilterProxyModel, Qt, QPropertyAnimation
-from PySide6.QtGui import QStandardItem, QStandardItemModel, QAction
+import chardet
+from PySide6.QtCore import QSortFilterProxyModel, Qt, QPropertyAnimation, QTimer
+from PySide6.QtGui import QStandardItem, QStandardItemModel, QAction, QFont
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QSplitter,
     QFrame,
+    QScrollArea,
     QMenu,
     QDialog,
     QTableWidget,
@@ -30,6 +32,7 @@ from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
 )
 
+# --- AboutDialog remains unchanged ---
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -41,56 +44,34 @@ class AboutDialog(QDialog):
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
-
-        # Title label
-        title = QLabel("<h1 style='margin:0;'>CSV Filter & Sorter</h1>", self)
+        title = QLabel("<h1 style='margin:0;'>Data Access and Reformatting Tool</h1>", self)
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
-
-        # Info text
         info = QLabel(
             "<p style='font-size:14px; line-height:1.5;'>"
-            "Version 0.3b<br><br>"
+            "Version: 2.1 (Cappadocia)<br><br>"
             "Data reformatting made easy.<br><br>"
-            "Developed by Alfa Ozaltin @ VXCO<br><br>"
+            "Developed by Alfa Ozaltin<br><br>"
             "#dartftw"
             "</p>",
             self)
         info.setAlignment(Qt.AlignCenter)
         layout.addWidget(info)
-
-        # Close button
         button_box = QDialogButtonBox(QDialogButtonBox.Close)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
 
     def start_animation(self):
-        # Set up an opacity effect and animate from 0 (transparent) to 1 (fully opaque)
         self.opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.opacity_effect)
         self.anim = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.anim.setDuration(1000)  # Animation duration: 1 second
+        self.anim.setDuration(1000)
         self.anim.setStartValue(0)
         self.anim.setEndValue(1)
         self.anim.start()
 
-
+# --- MultiFilterProxyModel remains unchanged ---
 class MultiFilterProxyModel(QSortFilterProxyModel):
-    """
-
-    Supported commands:
-      - "#range: x,y"       : Only show rows where the cell's numeric value is between x and y.
-      - "#startswith: text" : Only show rows where the cell starts with 'text'.
-      - "#contains: text"   : Only show rows where the cell contains 'text'.
-      - "#equals: text"     : Only show rows where the cell exactly equals 'text'.
-      - "#endswith: text"   : Only show rows where the cell ends with 'text'.
-      - "#not: text"        : Exclude rows where the cell contains 'text'.
-      - "#regex: pattern"   : Only show rows where the cell matches the regular expression.
-      - "#in: v1, v2, ..."  : Only show rows where the cell equals one of the comma‑separated values.
-
-    Without a '#' prefix, a simple case‑insensitive substring search is performed.
-    """
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.column_filters = {}
@@ -164,7 +145,6 @@ class MultiFilterProxyModel(QSortFilterProxyModel):
                 else:
                     if filterTextStripped.lower() not in cellStr.lower():
                         return False
-
         if self.global_filter_text:
             found = False
             for col in range(1, model.columnCount()):
@@ -175,13 +155,10 @@ class MultiFilterProxyModel(QSortFilterProxyModel):
                     break
             if not found:
                 return False
-
         return True
 
-
+# --- StatsDialog remains unchanged ---
 class StatsDialog(QDialog):
-
-
     def __init__(self, proxy_model, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Stats")
@@ -214,7 +191,6 @@ class StatsDialog(QDialog):
                 stats.append((header, "Numeric", count_val, min_val, max_val, avg_val))
             else:
                 stats.append((header, "Non-numeric", proxy_model.rowCount(), "-", "-", "-"))
-
         self.table.setRowCount(len(stats))
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["Column", "Type", "Count", "Min", "Max", "Average"])
@@ -225,15 +201,13 @@ class StatsDialog(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
-
+# --- HelpDialog remains unchanged ---
 class HelpDialog(QDialog):
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("DART Help")
         self.resize(700, 500)
         layout = QVBoxLayout(self)
-
         self.text_browser = QTextBrowser(self)
         self.text_browser.setReadOnly(True)
         help_html = """
@@ -272,35 +246,36 @@ class HelpDialog(QDialog):
                 <li><strong>Reset Sorting:</strong> Reverts to the original CSV order.</li>
                 <li><strong>Resize Columns:</strong> Adjusts column widths to automatically fit their content.</li>
                 <li><strong>Statistics:</strong> Displays summary statistics for numeric columns.</li>
+                <li><strong>Zoom In / Zoom Out:</strong> Increase or decrease the font size of the table data.</li>
             </ul>
-            <p>For more information, visit our github page: github.com/vxco/dart</p>
+            <p>For more information, visit the github page: <a>github.com/alfaoz/dart</a></p>
         </body>
         </html>
         """
         self.text_browser.setHtml(help_html)
         layout.addWidget(self.text_browser)
-
         button_box = QDialogButtonBox(QDialogButtonBox.Close)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
 
-
+# --- Main Application Class with Zoom Features and Layout Refinements ---
 class CSVFilterSortApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DART | Data Access and Reformatting Tool")
+        self.setWindowTitle("DART")
         self.resize(1200, 700)
         self.dark_mode = True
         self.init_ui()
+        # Save default font size for zoom reset.
+        self.default_font_size = self.table_view.font().pointSize()
 
     def init_ui(self):
         self.splitter = QSplitter(Qt.Horizontal, self)
         self.setCentralWidget(self.splitter)
-
+        # Left Panel: Global Search and Table View.
         self.left_panel = QWidget()
         left_layout = QVBoxLayout(self.left_panel)
         self.splitter.addWidget(self.left_panel)
-
         search_layout = QHBoxLayout()
         search_label = QLabel("Global Search:")
         self.global_search_edit = QLineEdit()
@@ -309,35 +284,38 @@ class CSVFilterSortApp(QMainWindow):
         search_layout.addWidget(search_label)
         search_layout.addWidget(self.global_search_edit)
         left_layout.addLayout(search_layout)
-
         self.table_view = QTableView()
         self.table_view.setSortingEnabled(True)
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self.open_context_menu)
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.table_view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         left_layout.addWidget(self.table_view)
-
+        # Right Panel: Filter Panel in a Scroll Area.
         self.filter_panel = QFrame()
         self.filter_panel.setFrameShape(QFrame.StyledPanel)
         self.filter_panel.setMinimumWidth(300)
-        self.filter_layout = QVBoxLayout(self.filter_panel)
+        right_layout = QVBoxLayout(self.filter_panel)
+        clear_filters_btn = QPushButton("Clear All Filters")
+        clear_filters_btn.clicked.connect(self.clear_filters)
+        right_layout.addWidget(clear_filters_btn)
+        self.filter_widget = QWidget()
+        self.filter_layout = QFormLayout(self.filter_widget)
+        self.filter_widget.setLayout(self.filter_layout)
+        self.filter_scroll = QScrollArea()
+        self.filter_scroll.setWidgetResizable(True)
+        self.filter_scroll.setWidget(self.filter_widget)
+        right_layout.addWidget(self.filter_scroll)
+        right_layout.addStretch()
         self.splitter.addWidget(self.filter_panel)
-
-        self.clear_filters_btn = QPushButton("Clear All Filters")
-        self.clear_filters_btn.clicked.connect(self.clear_filters)
-        self.filter_layout.addWidget(self.clear_filters_btn)
-
-        self.filter_form = QFormLayout()
-        self.filter_layout.addLayout(self.filter_form)
-        self.filter_layout.addStretch()
-
+        self.splitter.setStretchFactor(0, 3)
+        self.splitter.setStretchFactor(1, 1)
         self.statusBar().showMessage("Ready")
-
         self.model = QStandardItemModel(self)
         self.proxy_model = MultiFilterProxyModel(self)
         self.proxy_model.setSourceModel(self.model)
         self.table_view.setModel(self.proxy_model)
-
         self.filter_editors = {}
         self.create_menus_and_toolbar()
         self.apply_dark_mode()
@@ -345,65 +323,84 @@ class CSVFilterSortApp(QMainWindow):
     def create_menus_and_toolbar(self):
         menubar = self.menuBar()
         file_menu = menubar.addMenu("&File")
-
         open_action = QAction("Open CSV", self)
         open_action.triggered.connect(self.open_csv)
         file_menu.addAction(open_action)
-
         export_action = QAction("Export CSV", self)
         export_action.triggered.connect(self.export_csv)
         file_menu.addAction(export_action)
-
         file_menu.addSeparator()
-
         save_settings_action = QAction("Save Settings", self)
         save_settings_action.triggered.connect(self.save_settings)
         file_menu.addAction(save_settings_action)
-
         load_settings_action = QAction("Load Settings", self)
         load_settings_action.triggered.connect(self.load_settings)
         file_menu.addAction(load_settings_action)
-
         file_menu.addSeparator()
-
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
-
         help_menu = menubar.addMenu("&Help")
         help_action = QAction("Help", self)
         help_action.triggered.connect(self.show_help)
         help_menu.addAction(help_action)
-
         about_action = QAction("About", self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
-
         toolbar = self.addToolBar("Main Toolbar")
         toolbar.addAction(open_action)
         toolbar.addAction(export_action)
         toolbar.addAction(save_settings_action)
         toolbar.addAction(load_settings_action)
-
         clear_filters_action = QAction("Clear Filters", self)
         clear_filters_action.triggered.connect(self.clear_filters)
         toolbar.addAction(clear_filters_action)
-
         reset_sort_action = QAction("Reset Sorting", self)
         reset_sort_action.triggered.connect(self.reset_sorting)
         toolbar.addAction(reset_sort_action)
-
         resize_columns_action = QAction("Resize Columns", self)
         resize_columns_action.triggered.connect(self.resize_columns)
         toolbar.addAction(resize_columns_action)
-
         stats_action = QAction("Show Stats", self)
         stats_action.triggered.connect(self.show_stats)
         toolbar.addAction(stats_action)
-
+        # New Zoom actions:
+        zoom_in_action = QAction("Zoom In", self)
+        zoom_in_action.triggered.connect(self.zoom_in)
+        toolbar.addAction(zoom_in_action)
+        zoom_out_action = QAction("Zoom Out", self)
+        zoom_out_action.triggered.connect(self.zoom_out)
+        toolbar.addAction(zoom_out_action)
+        reset_zoom_action = QAction("Reset Zoom", self)
+        reset_zoom_action.triggered.connect(self.reset_zoom)
+        toolbar.addAction(reset_zoom_action)
         toggle_dark_action = QAction("Toggle Dark Mode", self)
         toggle_dark_action.triggered.connect(self.toggle_dark_mode)
         toolbar.addAction(toggle_dark_action)
+
+    # Zoom methods
+    def zoom_in(self):
+        font = self.table_view.font()
+        new_size = font.pointSize() + 1
+        font.setPointSize(new_size)
+        self.table_view.setFont(font)
+        self.table_view.horizontalHeader().setFont(font)
+        self.statusBar().showMessage(f"Zoom In: {new_size} pt", 2000)
+
+    def zoom_out(self):
+        font = self.table_view.font()
+        new_size = max(6, font.pointSize() - 1)
+        font.setPointSize(new_size)
+        self.table_view.setFont(font)
+        self.table_view.horizontalHeader().setFont(font)
+        self.statusBar().showMessage(f"Zoom Out: {new_size} pt", 2000)
+
+    def reset_zoom(self):
+        font = self.table_view.font()
+        font.setPointSize(self.default_font_size)
+        self.table_view.setFont(font)
+        self.table_view.horizontalHeader().setFont(font)
+        self.statusBar().showMessage(f"Zoom Reset: {self.default_font_size} pt", 2000)
 
     def show_help(self):
         dlg = HelpDialog(self)
@@ -460,43 +457,50 @@ class CSVFilterSortApp(QMainWindow):
         file_name, _ = QFileDialog.getOpenFileName(self, "Open CSV File", "", "CSV Files (*.csv)")
         if file_name:
             try:
-                with open(file_name, newline="", encoding="utf-8") as csvfile:
+                with open(file_name, 'rb') as f:
+                    raw_data = f.read(10000)
+                detected = chardet.detect(raw_data)
+                encoding = detected.get('encoding', 'utf-8')
+                if encoding.lower() == 'ascii':
+                    encoding = 'latin1'
+                with open(file_name, newline="", encoding=encoding) as csvfile:
                     reader = csv.reader(csvfile)
                     data = list(reader)
                 if not data:
                     QMessageBox.warning(self, "Empty File", "The CSV file is empty.")
                     return
-
                 headers = data[0]
+                self.model.layoutAboutToBeChanged.emit()
                 self.model.clear()
-
                 new_headers = ["_index_"] + headers
                 self.model.setColumnCount(len(new_headers))
                 self.model.setHorizontalHeaderLabels(new_headers)
-
                 for idx, row in enumerate(data[1:]):
                     index_item = QStandardItem()
-                    index_item.setData(idx, Qt.DisplayRole)  #int
+                    index_item.setData(idx, Qt.DisplayRole)
                     items = [index_item] + [QStandardItem(field) for field in row]
                     self.model.appendRow(items)
-
+                self.model.layoutChanged.emit()
                 self.table_view.setColumnHidden(0, True)
                 self.statusBar().showMessage(f"Loaded {file_name}")
                 self.setup_filters(headers)
                 self.resize_columns()
+                self.table_view.reset()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not load CSV file:\n{e}")
 
     def setup_filters(self, headers):
-        while self.filter_form.rowCount() > 0:
-            self.filter_form.removeRow(0)
+        while self.filter_layout.count():
+            item = self.filter_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
         self.filter_editors.clear()
-
         for col, header in enumerate(headers, start=1):
             line_edit = QLineEdit()
             line_edit.setPlaceholderText(f"Filter {header} (#range, #startswith, etc.)")
             line_edit.textChanged.connect(lambda text, col=col: self.proxy_model.setFilterForColumn(col, text))
-            self.filter_form.addRow(header, line_edit)
+            self.filter_layout.addRow(header, line_edit)
             self.filter_editors[col] = line_edit
 
     def clear_filters(self):
@@ -517,7 +521,6 @@ class CSVFilterSortApp(QMainWindow):
         if self.model.rowCount() == 0:
             QMessageBox.information(self, "No Data", "No data to export.")
             return
-
         file_name, _ = QFileDialog.getSaveFileName(self, "Export CSV File", "", "CSV Files (*.csv)")
         if file_name:
             try:
@@ -539,14 +542,12 @@ class CSVFilterSortApp(QMainWindow):
         if self.model.columnCount() <= 1:
             QMessageBox.information(self, "No Data", "No settings to save without loaded data.")
             return
-
         file_name, _ = QFileDialog.getSaveFileName(self, "Save Settings", "", "JSON Files (*.json)")
         if file_name:
             try:
                 settings = {}
                 filter_settings = {str(col): editor.text() for col, editor in self.filter_editors.items()}
                 settings["filters"] = filter_settings
-
                 header = self.table_view.horizontalHeader()
                 sort_section = header.sortIndicatorSection()
                 sort_order = header.sortIndicatorOrder()
@@ -561,7 +562,6 @@ class CSVFilterSortApp(QMainWindow):
         if self.model.columnCount() <= 1:
             QMessageBox.information(self, "No Data", "Load a CSV before loading settings.")
             return
-
         file_name, _ = QFileDialog.getOpenFileName(self, "Load Settings", "", "JSON Files (*.json)")
         if file_name:
             try:
@@ -591,11 +591,9 @@ class CSVFilterSortApp(QMainWindow):
             return
         menu = QMenu()
         copy_action = QAction("Copy Cell", self)
-        copy_action.triggered.connect(
-            lambda: QApplication.clipboard().setText(str(self.proxy_model.data(index, Qt.DisplayRole))))
+        copy_action.triggered.connect(lambda: QApplication.clipboard().setText(str(self.proxy_model.data(index, Qt.DisplayRole))))
         menu.addAction(copy_action)
         menu.exec(self.table_view.viewport().mapToGlobal(position))
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -2,23 +2,8 @@
 
 All notable changes to this project will be documented in this file.
 
----
 
-## [v2.2 "Petra"] - 2025-XX-XX (Upcoming)
-### Added
-- Additional performance optimizations.
-
-### Changed
-- UI refinements for a more modern look and improved interactivity.
-- Updated filtering engine for even smoother performance on large datasets.
-
-### Fixed
-- Minor bugs reported in previous releases.
-- Stability improvements for high-density CSV files.
-
----
-
-## [v2.1 "Cappadocia"] - 2025-FEB-15
+## [v2.1 "Cappadocia"] - 2025-FEB-15 (Latest)
 ### Added
 - **Zoom Functionality:** Implemented true zoom on the data display via a QGraphicsView/QGraphicsProxyWidget approach (or similar), allowing users to scale the entire table without merely adjusting the font.
 - **Optimized Model Updates:** Blocked signals during CSV loading to minimize stuttering.
