@@ -1,82 +1,92 @@
-# Changelog
+# changelog
 
-All notable changes to this project will be documented in this file.
+## v2.2 "petra" - 2026-feb-10 (latest)
 
+### added
+- full ui rewrite: modern minimal design with green color scheme from logo
+- multi-format support: csv, tsv, json, xlsx import and export
+- delimiter auto-detection for text files (comma, semicolon, tab, pipe)
+- splash screen on startup with logo
+- loading overlay during data import
+- inline column filter bar replacing the old right sidebar
+- native widget-based help dialog
+- stats export to csv
+- drag and drop for all supported file formats
+- keyboard shortcuts for all major actions
+- github actions ci pipeline for macos and windows builds
 
-## [v2.1 "Cappadocia"] - 2025-FEB-15 (Latest)
-### Added
-- **Zoom Functionality:** Implemented true zoom on the data display via a QGraphicsView/QGraphicsProxyWidget approach (or similar), allowing users to scale the entire table without merely adjusting the font.
-- **Optimized Model Updates:** Blocked signals during CSV loading to minimize stuttering.
-- **Enhanced Layout:** Introduced a scrollable filter panel and refined splitter stretch factors for a fixed-size, responsive layout.
+### changed
+- restructured from single main.py into modular codebase
+- theme system with color tokens replacing hardcoded stylesheets
+- table is now full-width, no more splitter layout
+- action bar with grouped buttons replacing text-only toolbar
 
-### Changed
-- Improved performance across filtering and sorting operations.
-- Adjusted UI elements to ensure the left panel (data view) remains visible and responsive.
-
-### Fixed
-- Resolved issues where the application window would elongate excessively with many columns.
-- Minor bug fixes in advanced filtering commands.
-
----
-
-## [v2.0 "Red Rocks"] - 2025-FEB-11
-### Added
-- **Interactive Bundler ("BunMapP"):** An interactive tool for packaging DART as a standalone application, complete with saving/loading settings in proprietary `.bunmapp` files.
-- **Cross-Platform Version Metadata:** Automatically generates a Windows version file or macOS Info.plist (via post-processing) based on user input.
-- New PyInstaller options for universal bundling support.
-
-### Changed
-- Refactored code to streamline cross-platform bundling and version metadata generation.
-- Enhanced CSV encoding detection and error handling.
-
-### Fixed
-- Resolved CSV loading errors related to non-UTF-8 encoded files.
-- Fixed several issues with advanced filtering commands.
+### fixed
+- column resize no longer causes window to grow unbounded
+- filter bar properly clips and scrolls with the table
 
 ---
 
-## [v1.2 "Joshua Tree"] - 2025-FEB-9
-### Added
-- **Dark Mode/Light Mode Toggle:** Introduced a stylish dark mode with an option to switch back to light mode.
-- **Improved CSV Loading:** Integrated chardet for automatic encoding detection to support a variety of CSV formats.
-- Smoother sorting and filtering interactions.
+## v2.1 "cappadocia" - 2025-feb-15
 
-### Changed
-- Enhanced overall UI responsiveness and stability.
-- Updated layout adjustments for better space management.
+### added
+- zoom functionality for scaling the table display
+- optimized model updates by blocking signals during csv loading
+- scrollable filter panel with refined layout
 
-### Fixed
-- Addressed minor performance issues during CSV data processing.
-- Corrected filtering bugs causing occasional mismatches.
+### changed
+- improved filtering and sorting performance
+- adjusted ui elements for better responsiveness
 
----
-
-## [v1.1 "Arches"] - 2025-FEB-8
-### Added
-- **Advanced Filtering Commands:**  
-  - `#range: x,y` – Filter by numeric range.
-  - `#startswith: text` – Match the beginning of cell text.
-  - `#contains: text` – Perform a substring search.
-  - `#equals: text` – Exact match filtering.
-  - `#endswith: text` – Filter by text ending.
-  - `#not: text` – Exclude rows containing certain text.
-  - `#regex: pattern` – Regular expression filtering.
-  - `#in: value1, value2, ...` – Filter by multiple exact values.
-- Improved error handling for CSV decoding issues.
-
-### Fixed
-- Corrected problems with non-UTF8 CSV file loading.
+### fixed
+- window no longer elongates with many columns
+- minor filter command bugs
 
 ---
 
-## [v1.0 "Yosemite"] - 2025-FEB-7
-### Added
-- **Initial Release:**  
-  - Basic CSV viewing with a table interface.
-  - Simple case-insensitive substring filtering.
-  - Sorting and exporting capabilities.
-- Set up the foundation for advanced filtering and future enhancements.
+## v2.0 "red rocks" - 2025-feb-11
+
+### added
+- interactive bundler (bunmapp) for standalone packaging
+- cross-platform version metadata generation
+- pyinstaller bundling support
+
+### changed
+- refactored bundling and metadata code
+- enhanced encoding detection
+
+### fixed
+- csv loading errors with non-utf-8 files
+- several filter command issues
 
 ---
 
-*For a complete list of changes and to contribute, please see our [GitHub repository](https://github.com/alfaoz/dart).*
+## v1.2 "joshua tree" - 2025-feb-9
+
+### added
+- dark/light mode toggle
+- chardet integration for encoding detection
+- smoother sorting and filtering
+
+### fixed
+- performance issues during csv processing
+- filtering mismatches
+
+---
+
+## v1.1 "arches" - 2025-feb-8
+
+### added
+- advanced filter commands: range, startswith, contains, equals, endswith, not, regex, in
+- improved csv decoding error handling
+
+### fixed
+- non-utf8 csv loading
+
+---
+
+## v1.0 "yosemite" - 2025-feb-7
+
+### added
+- initial release
+- basic csv viewing, substring filtering, sorting, exporting
