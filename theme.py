@@ -127,7 +127,7 @@ def build_stylesheet(theme: str) -> str:
         alternate-background-color: {t['row_alt']};
         color: {t['text_primary']};
         gridline-color: {t['border_subtle']};
-        border: none; outline: none; font-size: 13px;
+        border: none; outline: none;
     }}
     QTableView::item {{
         padding: 0px 10px;

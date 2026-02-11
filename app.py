@@ -115,6 +115,8 @@ class CSVFilterSortApp(QMainWindow):
         self.default_font_size = self.table_view.font().pixelSize()
         if self.default_font_size <= 0:
             self.default_font_size = self.table_view.font().pointSize()
+        self._apply_table_density(self.default_font_size)
+        self._update_zoom_label()
 
     # -----------------------------------------------------------------
     # Models
@@ -229,7 +231,11 @@ class CSVFilterSortApp(QMainWindow):
         lay.addWidget(sep())
         lay.addWidget(btn("Clear Filters", "Clear all filters", self.clear_filters))
         lay.addWidget(btn("Reset Sort", "Reset to original order", self.reset_sorting))
-        lay.addWidget(btn("Fit Columns", "Auto-resize columns", self.resize_columns))
+        lay.addWidget(btn(
+            "Fit Columns",
+            "Auto-resize columns (balanced). Shift-click for exact full fit.",
+            self.fit_columns,
+        ))
         lay.addWidget(sep())
         lay.addWidget(btn("Stats", "Column statistics  (Ctrl+I)", self.show_stats))
         lay.addWidget(sep())
@@ -277,6 +283,9 @@ class CSVFilterSortApp(QMainWindow):
         QShortcut(QKeySequence("Ctrl+="), self).activated.connect(self.zoom_in)
         QShortcut(QKeySequence("Ctrl+-"), self).activated.connect(self.zoom_out)
         QShortcut(QKeySequence("Ctrl+0"), self).activated.connect(self.reset_zoom)
+        QShortcut(QKeySequence("Ctrl+R"), self).activated.connect(self.fit_columns)
+        QShortcut(QKeySequence("Ctrl+Shift+R"), self).activated.connect(
+            lambda: self.resize_columns("full"))
         QShortcut(QKeySequence("Ctrl+I"), self).activated.connect(self.show_stats)
         QShortcut(QKeySequence("Ctrl+Shift+T"), self).activated.connect(self.toggle_theme)
 
@@ -469,28 +478,142 @@ class CSVFilterSortApp(QMainWindow):
     def reset_sorting(self):
         self.proxy_model.sort(0, Qt.AscendingOrder)
 
-    def resize_columns(self):
-        """Sample-based column resize: measure first 100 rows instead of all."""
-        if self.model.rowCount() == 0:
+    def fit_columns(self):
+        mods = QApplication.keyboardModifiers()
+        if mods & Qt.ShiftModifier:
+            mode = "full"
+        elif mods & Qt.AltModifier:
+            mode = "quick"
+        else:
+            mode = "balanced"
+        self.resize_columns(mode)
+
+    def _visible_proxy_rows(self):
+        total = self.proxy_model.rowCount()
+        if total <= 0:
+            return []
+        first = self.table_view.rowAt(0)
+        if first < 0:
+            first = 0
+        last = self.table_view.rowAt(max(0, self.table_view.viewport().height() - 1))
+        if last < 0:
+            last = min(total - 1, first + 40)
+        first = max(0, min(first, total - 1))
+        last = max(first, min(last, total - 1))
+        return list(range(first, last + 1))
+
+    def _sample_proxy_rows(self, mode):
+        total = self.proxy_model.rowCount()
+        if total <= 0:
+            return []
+        if mode == "full":
+            return list(range(total))
+
+        rows = set(self._visible_proxy_rows())
+        if mode == "quick":
+            return sorted(rows)
+
+        # Balanced mode:
+        # - Always include visible rows.
+        # - Add head/tail windows.
+        # - Add evenly spaced rows across the filtered dataset.
+        edge = min(30, total)
+        rows.update(range(edge))
+        rows.update(range(max(0, total - edge), total))
+
+        target = 240
+        if total <= target:
+            rows.update(range(total))
+        else:
+            step = max(1, total // target)
+            for r in range(0, total, step):
+                rows.add(r)
+            rows.add(total - 1)
+        return sorted(rows)
+
+    def resize_columns(self, mode="balanced"):
+        """Auto-fit columns.
+
+        Modes:
+        - quick: visible rows only (fastest)
+        - balanced: visible + stratified sample (default)
+        - full: all filtered rows (most accurate, slowest)
+        """
+        if self.model.rowCount() == 0 or self.model.columnCount() <= 1:
             return
-        fm = self.table_view.fontMetrics()
+
+        mode = (mode or "balanced").lower()
+        if mode not in {"quick", "balanced", "full"}:
+            mode = "balanced"
+
+        proxy_rows = self._sample_proxy_rows(mode)
+        if not proxy_rows:
+            return
+
         header = self.table_view.horizontalHeader()
-        sample_count = min(100, self.proxy_model.rowCount())
-        for col in range(1, self.model.columnCount()):
-            # Header width
-            hdr_text = self.model.headerData(col, Qt.Horizontal) or ""
-            max_w = fm.horizontalAdvance(str(hdr_text)) + 24  # padding
-            # Sample cells
-            for row in range(sample_count):
-                val = self.proxy_model.data(
-                    self.proxy_model.index(row, col), Qt.DisplayRole)
-                if val is not None:
-                    w = fm.horizontalAdvance(str(val)) + 16
-                    if w > max_w:
-                        max_w = w
-            # Clamp
-            max_w = max(60, min(max_w, 400))
-            header.resizeSection(col, max_w)
+        fm = self.table_view.fontMetrics()
+        col_range = range(1, self.model.columnCount())
+
+        viewport_w = max(600, self.table_view.viewport().width())
+        max_col_w = max(180, int(viewport_w * 0.55))
+        min_col_w = 72
+        header_pad = 30
+        cell_pad = 20
+        measure_limit = 180
+
+        widths = {}
+        for col in col_range:
+            title = str(self.model.headerData(col, Qt.Horizontal) or "")
+            widths[col] = max(min_col_w, fm.horizontalAdvance(title) + header_pad)
+
+        raw_rows = self.model.raw_data()
+        visible_indices = self.proxy_model._visible_indices
+        capped = {col: False for col in col_range}
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            for i, proxy_row in enumerate(proxy_rows):
+                if proxy_row < 0 or proxy_row >= len(visible_indices):
+                    continue
+                src_row = visible_indices[proxy_row]
+                if src_row < 0 or src_row >= len(raw_rows):
+                    continue
+                row_data = raw_rows[src_row]
+
+                for col in col_range:
+                    if capped[col]:
+                        continue
+                    data_col = col - 1
+                    if data_col >= len(row_data):
+                        continue
+                    txt = row_data[data_col]
+                    if not txt:
+                        continue
+                    if len(txt) > measure_limit:
+                        txt = txt[:measure_limit]
+                    w = fm.horizontalAdvance(txt) + cell_pad
+                    if w > widths[col]:
+                        if w >= max_col_w:
+                            widths[col] = max_col_w
+                            capped[col] = True
+                        else:
+                            widths[col] = w
+
+                if mode == "full" and i % 25000 == 0:
+                    QApplication.processEvents()
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        for col in col_range:
+            header.resizeSection(col, int(max(min_col_w, min(widths[col], max_col_w))))
+
+        if mode == "full":
+            detail = "all filtered rows"
+        elif mode == "quick":
+            detail = "visible rows"
+        else:
+            detail = f"{len(proxy_rows):,} sampled rows"
+        self.statusBar().showMessage(f"Fit columns ({mode}): {detail}", 3000)
 
     # -----------------------------------------------------------------
     # Export (multi-format) — direct list access
@@ -624,7 +747,13 @@ class CSVFilterSortApp(QMainWindow):
         else:
             f.setPointSize(size)
         self.table_view.setFont(f)
+        self._apply_table_density(size)
         self._update_zoom_label()
+
+    def _apply_table_density(self, font_size):
+        """Scale row height with zoom so zoom-out shows more rows."""
+        row_height = max(16, int(round(font_size * 2.75)))
+        self.table_view.verticalHeader().setDefaultSectionSize(row_height)
 
     def zoom_in(self):
         self._set_font_size(self._get_font_size() + 1)
