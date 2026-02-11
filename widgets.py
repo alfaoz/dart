@@ -1,6 +1,6 @@
 """Reusable DART widgets: filter bar, empty state, loading overlay."""
 
-from PySide6.QtCore import Qt, QPropertyAnimation, QEvent, QPoint
+from PySide6.QtCore import Qt, QPropertyAnimation, QEvent, QPoint, QTimer, Signal
 from PySide6.QtGui import QFont, QColor, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, QLabel,
@@ -32,16 +32,23 @@ FILTER_COMMANDS = [
 # ---------------------------------------------------------------------------
 
 class FilterInput(QLineEdit):
-    """QLineEdit with # command autocomplete popup."""
+    """QLineEdit with # command autocomplete popup and debounced output."""
 
     _popup = None  # shared popup across all instances
+    debounced_text = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("colFilter")
         self.setFixedHeight(24)
         self.setPlaceholderText("# to filter...")
+        self._debounce_timer = QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(300)
+        self._debounce_timer.timeout.connect(
+            lambda: self.debounced_text.emit(self.text()))
         self.textChanged.connect(self._on_text_changed)
+        self.textChanged.connect(lambda _: self._debounce_timer.start())
 
     def _get_popup(self):
         """Lazy-create a single shared popup (re-parented on use)."""
@@ -121,8 +128,8 @@ class _CommandPopup(QWidget):
         self.setFixedWidth(280)
         self._apply_style()
 
-    def _apply_style(self):
-        t = THEMES["dark"]
+    def _apply_style(self, theme_name="dark"):
+        t = THEMES[theme_name]
         self.setStyleSheet(f"""
             _CommandPopup {{
                 background: {t['bg_elevated']};
@@ -218,6 +225,7 @@ class ColumnFilterBar(QWidget):
     def __init__(self, table_view: QTableView, parent=None):
         super().__init__(parent)
         self.setObjectName("columnFilterBar")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.table_view = table_view
         self.setFixedHeight(30)
         self.inputs: list[FilterInput] = []
@@ -265,6 +273,8 @@ class ColumnFilterBar(QWidget):
 class EmptyState(QWidget):
     def __init__(self, logo_path: str, on_open, parent=None):
         super().__init__(parent)
+        self.setObjectName("emptyState")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
         layout.setSpacing(16)
@@ -360,11 +370,14 @@ class LoadingOverlay(QWidget):
 # ---------------------------------------------------------------------------
 
 class SearchBar(QWidget):
-    """Global search bar with animated focus glow."""
+    """Global search bar with animated focus glow and debounced output."""
+
+    debounced_text = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("searchBar")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedHeight(44)
 
         lay = QHBoxLayout(self)
@@ -375,6 +388,13 @@ class SearchBar(QWidget):
         self.input.setPlaceholderText("Search all columns...    Ctrl+F")
         self.input.setClearButtonEnabled(True)
         self.input.setMinimumHeight(32)
+
+        self._debounce_timer = QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(300)
+        self._debounce_timer.timeout.connect(
+            lambda: self.debounced_text.emit(self.input.text()))
+        self.input.textChanged.connect(lambda _: self._debounce_timer.start())
 
         self._shadow = QGraphicsDropShadowEffect()
         self._shadow.setBlurRadius(0)

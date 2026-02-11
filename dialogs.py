@@ -1,7 +1,7 @@
 """DART dialog windows."""
 
 import csv
-from PySide6.QtCore import Qt, QPropertyAnimation
+from PySide6.QtCore import Qt, QPropertyAnimation, QObject, QThread, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -230,49 +230,108 @@ class HelpDialog(BaseDialog):
 
 
 # -----------------------------------------------------------------------
-# Stats (with CSV export)
+# Stats worker (runs on QThread)
+# -----------------------------------------------------------------------
+
+class StatsWorker(QObject):
+    """Compute column statistics off the main thread."""
+    progress = Signal(int)   # percentage 0-100
+    finished = Signal(list)  # list of tuples
+
+    def __init__(self, headers, raw_data, visible_indices):
+        super().__init__()
+        self._headers = headers
+        self._data = raw_data
+        self._indices = visible_indices
+
+    def run(self):
+        results: list[tuple] = []
+        total_cells = len(self._indices) * len(self._headers)
+        cells_done = 0
+        last_pct = -1
+
+        for col_idx, hdr in enumerate(self._headers):
+            nums: list[float] = []
+            for src_row in self._indices:
+                row_data = self._data[src_row]
+                cell = row_data[col_idx] if col_idx < len(row_data) else ""
+                try:
+                    nums.append(float(cell))
+                except (ValueError, TypeError):
+                    pass
+                cells_done += 1
+                if cells_done % 100_000 == 0:
+                    pct = int(cells_done / total_cells * 100) if total_cells else 100
+                    if pct != last_pct:
+                        self.progress.emit(pct)
+                        last_pct = pct
+
+            if nums:
+                results.append((
+                    hdr, "Numeric", str(len(nums)),
+                    f"{min(nums):.2f}", f"{max(nums):.2f}",
+                    f"{sum(nums)/len(nums):.2f}"))
+            else:
+                results.append((
+                    hdr, "Text", str(len(self._indices)), "-", "-", "-"))
+
+        self.finished.emit(results)
+
+
+# -----------------------------------------------------------------------
+# Stats (with CSV export) — async
 # -----------------------------------------------------------------------
 
 class StatsDialog(BaseDialog):
-    def __init__(self, proxy_model, parent=None):
+    def __init__(self, source_model, proxy_model, parent=None):
         super().__init__(parent, title="Statistics", width=660, height=440)
         self._stats_data: list[tuple] = []
 
+        # Progress label (shown while computing)
+        self._progress_label = QLabel("Computing statistics...")
+        self._progress_label.setAlignment(Qt.AlignCenter)
+        self.content_layout.addWidget(self._progress_label)
+
+        # Table (hidden until done)
         self.table = QTableWidget()
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.hide()
         self.content_layout.addWidget(self.table)
-        self._populate(proxy_model)
 
-        export_btn = QPushButton("Export Stats")
-        export_btn.setObjectName("primaryButton")
-        export_btn.setCursor(Qt.PointingHandCursor)
-        export_btn.clicked.connect(self._export)
-        self._btn_row.insertWidget(0, export_btn)
+        # Export button (disabled until done)
+        self._export_btn = QPushButton("Export Stats")
+        self._export_btn.setObjectName("primaryButton")
+        self._export_btn.setCursor(Qt.PointingHandCursor)
+        self._export_btn.clicked.connect(self._export)
+        self._export_btn.setEnabled(False)
+        self._btn_row.insertWidget(0, self._export_btn)
 
         self.add_close_button()
 
-    def _populate(self, proxy):
-        src = proxy.sourceModel()
-        self._stats_data = []
-        for col in range(1, src.columnCount()):
-            hdr = src.headerData(col, Qt.Horizontal)
-            nums = []
-            for row in range(proxy.rowCount()):
-                try:
-                    nums.append(float(proxy.data(proxy.index(row, col), Qt.DisplayRole)))
-                except Exception:
-                    pass
-            if nums:
-                self._stats_data.append((
-                    hdr, "Numeric", str(len(nums)),
-                    f"{min(nums):.2f}", f"{max(nums):.2f}",
-                    f"{sum(nums)/len(nums):.2f}"))
-            else:
-                self._stats_data.append((
-                    hdr, "Text", str(proxy.rowCount()), "-", "-", "-"))
+        # Launch worker
+        headers = list(source_model.raw_headers())
+        raw_data = source_model.raw_data()
+        visible_indices = list(proxy_model._visible_indices)
+
+        self._worker = StatsWorker(headers, raw_data, visible_indices)
+        self._thread = QThread()
+        self._worker.moveToThread(self._thread)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.finished.connect(self._on_finished)
+        self._thread.started.connect(self._worker.run)
+        self._thread.start()
+
+    def _on_progress(self, pct):
+        self._progress_label.setText(f"Computing statistics... {pct}%")
+
+    def _on_finished(self, results):
+        self._stats_data = results
+        self._progress_label.hide()
+        self.table.show()
+        self._export_btn.setEnabled(True)
 
         headers = ["Column", "Type", "Count", "Min", "Max", "Average"]
         self.table.setRowCount(len(self._stats_data))
@@ -297,3 +356,8 @@ class StatsDialog(BaseDialog):
         except Exception as e:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error", f"Could not export stats:\n{e}")
+
+    def reject(self):
+        self._thread.quit()
+        self._thread.wait(2000)
+        super().reject()

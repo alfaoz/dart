@@ -5,10 +5,8 @@ import json
 import os
 
 import chardet
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import (
-    QStandardItem, QStandardItemModel, QAction, QFont, QKeySequence, QShortcut,
-)
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QTimer
+from PySide6.QtGui import QAction, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTableView, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QMessageBox, QFrame, QMenu,
@@ -16,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from theme import build_stylesheet, sys_font_family
-from filter_model import MultiFilterProxyModel
+from filter_model import FilteredTableModel
 from dialogs import AboutDialog, HelpDialog, StatsDialog
 from widgets import ColumnFilterBar, EmptyState, LoadingOverlay, SearchBar
 
@@ -37,6 +35,73 @@ _EXPORT_FILTER = "CSV (*.csv);;TSV (*.tsv);;JSON (*.json);;Excel (*.xlsx)"
 _SUPPORTED_EXT = {".csv", ".tsv", ".txt", ".json", ".xlsx"}
 
 
+# -------------------------------------------------------------------
+# RawTableModel — stores data as plain Python lists
+# -------------------------------------------------------------------
+
+class RawTableModel(QAbstractTableModel):
+    """Flat list-of-lists model. No QStandardItem overhead."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._headers: list[str] = []
+        self._data: list[list[str]] = []
+
+    def load(self, headers: list[str], rows: list[list[str]]):
+        self.beginResetModel()
+        self._headers = headers
+        self._data = rows
+        self.endResetModel()
+
+    # -- Direct access for workers --
+
+    def raw_data(self) -> list[list[str]]:
+        return self._data
+
+    def raw_headers(self) -> list[str]:
+        return self._headers
+
+    # -- QAbstractTableModel interface --
+
+    def rowCount(self, parent=QModelIndex()):
+        if parent.isValid():
+            return 0
+        return len(self._data)
+
+    def columnCount(self, parent=QModelIndex()):
+        if parent.isValid():
+            return 0
+        if not self._headers:
+            return 0
+        return len(self._headers) + 1  # +1 for hidden index col 0
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole or not index.isValid():
+            return None
+        row = index.row()
+        col = index.column()
+        if col == 0:
+            return row  # hidden index column
+        data_col = col - 1
+        if row < len(self._data) and data_col < len(self._data[row]):
+            return self._data[row][data_col]
+        return None
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole or orientation != Qt.Horizontal:
+            return None
+        if section == 0:
+            return "_index_"
+        idx = section - 1
+        if idx < len(self._headers):
+            return self._headers[idx]
+        return None
+
+
+# -------------------------------------------------------------------
+# Main Window
+# -------------------------------------------------------------------
+
 class CSVFilterSortApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -46,17 +111,20 @@ class CSVFilterSortApp(QMainWindow):
         self.filter_editors: dict[int, QLineEdit] = {}
         self._init_models()
         self._init_ui()
-        self.default_font_size = self.table_view.font().pointSize()
         self.apply_theme()
+        self.default_font_size = self.table_view.font().pixelSize()
+        if self.default_font_size <= 0:
+            self.default_font_size = self.table_view.font().pointSize()
 
     # -----------------------------------------------------------------
     # Models
     # -----------------------------------------------------------------
 
     def _init_models(self):
-        self.model = QStandardItemModel(self)
-        self.proxy_model = MultiFilterProxyModel(self)
-        self.proxy_model.setSourceModel(self.model)
+        self.model = RawTableModel(self)
+        self.proxy_model = FilteredTableModel(self)
+        self.proxy_model.set_source(self.model)
+        self.proxy_model.modelReset.connect(self._update_row_count)
 
     # -----------------------------------------------------------------
     # UI layout
@@ -64,6 +132,7 @@ class CSVFilterSortApp(QMainWindow):
 
     def _init_ui(self):
         central = QWidget()
+        central.setAttribute(Qt.WA_StyledBackground, True)
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
@@ -73,17 +142,21 @@ class CSVFilterSortApp(QMainWindow):
         root.addWidget(self.action_bar)
 
         self.search_bar = SearchBar()
-        self.search_bar.input.textChanged.connect(
+        self.search_bar.debounced_text.connect(
             lambda t: self.proxy_model.setGlobalFilter(t))
         root.addWidget(self.search_bar)
 
         self.stack = QStackedWidget()
+        self.stack.setObjectName("contentStack")
+        self.stack.setAttribute(Qt.WA_StyledBackground, True)
         root.addWidget(self.stack, 1)
 
         self.empty_state = EmptyState(LOGO_PATH, self.open_file)
         self.stack.addWidget(self.empty_state)
 
         data_page = QWidget()
+        data_page.setObjectName("dataPage")
+        data_page.setAttribute(Qt.WA_StyledBackground, True)
         data_layout = QVBoxLayout(data_page)
         data_layout.setContentsMargins(0, 0, 0, 0)
         data_layout.setSpacing(0)
@@ -129,6 +202,7 @@ class CSVFilterSortApp(QMainWindow):
     def _build_action_bar(self):
         bar = QWidget()
         bar.setObjectName("actionBar")
+        bar.setAttribute(Qt.WA_StyledBackground, True)
         bar.setFixedHeight(40)
         lay = QHBoxLayout(bar)
         lay.setContentsMargins(8, 0, 8, 0)
@@ -228,7 +302,7 @@ class CSVFilterSortApp(QMainWindow):
             self.status_rows.setText("")
 
     def _update_zoom_label(self):
-        pct = round(self.table_view.font().pointSize() / self.default_font_size * 100)
+        pct = round(self._get_font_size() / self.default_font_size * 100)
         self.status_zoom.setText(f"{pct}%")
 
     # -----------------------------------------------------------------
@@ -238,6 +312,9 @@ class CSVFilterSortApp(QMainWindow):
     def apply_theme(self):
         self.setStyleSheet(build_stylesheet(self.theme_name))
         self._theme_btn.setText("Light" if self.theme_name == "dark" else "Dark")
+        from widgets import FilterInput
+        if FilterInput._popup is not None:
+            FilterInput._popup._apply_style(self.theme_name)
 
     def toggle_theme(self):
         self.theme_name = "light" if self.theme_name == "dark" else "dark"
@@ -360,17 +437,8 @@ class CSVFilterSortApp(QMainWindow):
     # --- Populate model ---
 
     def _populate_model(self, headers, rows):
-        self.model.blockSignals(True)
-        self.model.clear()
-        self.model.setColumnCount(len(headers) + 1)
-        self.model.setHorizontalHeaderLabels(["_index_"] + headers)
-        for idx, row in enumerate(rows):
-            index_item = QStandardItem()
-            index_item.setData(idx, Qt.DisplayRole)
-            items = [index_item] + [QStandardItem(field) for field in row]
-            self.model.appendRow(items)
-        self.model.blockSignals(False)
-        self.model.layoutChanged.emit()
+        self.model.load(headers, rows)
+        self.proxy_model.reset_all()
         self.table_view.setColumnHidden(0, True)
         self._setup_column_filters(headers)
         self.resize_columns()
@@ -382,13 +450,12 @@ class CSVFilterSortApp(QMainWindow):
         self.column_filter_bar.rebuild(headers)
         for i, inp in enumerate(self.column_filter_bar.inputs):
             col = i + 1
-            inp.textChanged.connect(
+            inp.debounced_text.connect(
                 lambda text, c=col: self._on_filter(c, text))
             self.filter_editors[col] = inp
 
     def _on_filter(self, col, text):
         self.proxy_model.setFilterForColumn(col, text)
-        self._update_row_count()
 
     # -----------------------------------------------------------------
     # Filters & sorting
@@ -400,13 +467,33 @@ class CSVFilterSortApp(QMainWindow):
         self._update_row_count()
 
     def reset_sorting(self):
-        self.table_view.sortByColumn(0, Qt.AscendingOrder)
+        self.proxy_model.sort(0, Qt.AscendingOrder)
 
     def resize_columns(self):
-        self.table_view.resizeColumnsToContents()
+        """Sample-based column resize: measure first 100 rows instead of all."""
+        if self.model.rowCount() == 0:
+            return
+        fm = self.table_view.fontMetrics()
+        header = self.table_view.horizontalHeader()
+        sample_count = min(100, self.proxy_model.rowCount())
+        for col in range(1, self.model.columnCount()):
+            # Header width
+            hdr_text = self.model.headerData(col, Qt.Horizontal) or ""
+            max_w = fm.horizontalAdvance(str(hdr_text)) + 24  # padding
+            # Sample cells
+            for row in range(sample_count):
+                val = self.proxy_model.data(
+                    self.proxy_model.index(row, col), Qt.DisplayRole)
+                if val is not None:
+                    w = fm.horizontalAdvance(str(val)) + 16
+                    if w > max_w:
+                        max_w = w
+            # Clamp
+            max_w = max(60, min(max_w, 400))
+            header.resizeSection(col, max_w)
 
     # -----------------------------------------------------------------
-    # Export (multi-format)
+    # Export (multi-format) — direct list access
     # -----------------------------------------------------------------
 
     def export_data(self):
@@ -419,16 +506,12 @@ class CSVFilterSortApp(QMainWindow):
             return
 
         ext = os.path.splitext(path)[1].lower()
-        headers = [self.model.headerData(i, Qt.Horizontal)
-                   for i in range(1, self.model.columnCount())]
+        headers = list(self.model.raw_headers())
 
         def visible_rows():
-            for row in range(self.proxy_model.rowCount()):
-                yield [
-                    self.proxy_model.data(
-                        self.proxy_model.index(row, col), Qt.DisplayRole)
-                    for col in range(1, self.proxy_model.columnCount())
-                ]
+            data = self.model.raw_data()
+            for src_row in self.proxy_model._visible_indices:
+                yield data[src_row]
 
         try:
             if ext == ".json":
@@ -511,7 +594,7 @@ class CSVFilterSortApp(QMainWindow):
                 s = data.get("sort", {})
                 sec = s.get("section", -1)
                 if 0 <= sec < self.model.columnCount():
-                    self.table_view.sortByColumn(sec, Qt.SortOrder(s.get("order", 0)))
+                    self.proxy_model.sort(sec, Qt.SortOrder(s.get("order", 0)))
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not load:\n{e}")
 
@@ -519,23 +602,28 @@ class CSVFilterSortApp(QMainWindow):
     # Zoom
     # -----------------------------------------------------------------
 
-    def zoom_in(self):
+    def _get_font_size(self):
         f = self.table_view.font()
-        f.setPointSize(f.pointSize() + 1)
+        s = f.pixelSize()
+        return s if s > 0 else f.pointSize()
+
+    def _set_font_size(self, size):
+        f = self.table_view.font()
+        if f.pixelSize() > 0:
+            f.setPixelSize(size)
+        else:
+            f.setPointSize(size)
         self.table_view.setFont(f)
         self._update_zoom_label()
+
+    def zoom_in(self):
+        self._set_font_size(self._get_font_size() + 1)
 
     def zoom_out(self):
-        f = self.table_view.font()
-        f.setPointSize(max(6, f.pointSize() - 1))
-        self.table_view.setFont(f)
-        self._update_zoom_label()
+        self._set_font_size(max(6, self._get_font_size() - 1))
 
     def reset_zoom(self):
-        f = self.table_view.font()
-        f.setPointSize(self.default_font_size)
-        self.table_view.setFont(f)
-        self._update_zoom_label()
+        self._set_font_size(self.default_font_size)
 
     # -----------------------------------------------------------------
     # Dialogs
@@ -548,7 +636,7 @@ class CSVFilterSortApp(QMainWindow):
         AboutDialog(self).exec()
 
     def show_stats(self):
-        StatsDialog(self.proxy_model, self).exec()
+        StatsDialog(self.model, self.proxy_model, self).exec()
 
     # -----------------------------------------------------------------
     # Context menu
@@ -593,3 +681,11 @@ class CSVFilterSortApp(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.loading_overlay.resize(self.stack.size())
+
+    # -----------------------------------------------------------------
+    # Close — clean up worker thread
+    # -----------------------------------------------------------------
+
+    def closeEvent(self, event):
+        self.proxy_model.shutdown()
+        super().closeEvent(event)

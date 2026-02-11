@@ -131,6 +131,7 @@ def build_stylesheet(theme: str) -> str:
     }}
     QTableView::item {{
         padding: 0px 10px;
+        color: {t['text_primary']};
         border-bottom: 1px solid {t['border_subtle']};
     }}
     QTableView::item:hover {{ background-color: {t['row_hover']}; }}
@@ -150,6 +151,11 @@ def build_stylesheet(theme: str) -> str:
         font-size: 11px; font-weight: 600;
     }}
     QHeaderView::section:hover {{ background-color: {t['header_hover']}; color: {t['text_primary']}; }}
+
+    /* Main content */
+    QStackedWidget#contentStack {{ background: {t['bg_surface']}; }}
+    QWidget#dataPage {{ background: {t['bg_surface']}; }}
+    QWidget#emptyState {{ background: {t['bg_surface']}; }}
 
     /* Column filter bar */
     QWidget#columnFilterBar {{ background: {t['bg_surface']}; border-bottom: 1px solid {t['border_subtle']}; }}
@@ -249,6 +255,6 @@ def build_stylesheet(theme: str) -> str:
     }}
 
     /* Loading overlay */
-    QWidget#loadingOverlay {{ background: rgba(15,18,20,180); }}
+    QWidget#loadingOverlay {{ background: {"rgba(15,18,20,180)" if theme == "dark" else "rgba(245,248,246,200)"}; }}
     QLabel#loadingText {{ color: {t['text_secondary']}; font-size: 14px; }}
     """
