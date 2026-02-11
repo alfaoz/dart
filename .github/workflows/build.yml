@@ -43,6 +43,7 @@ jobs:
             --windowed \
             --onedir \
             --icon assets/dart.icns \
+            --runtime-hook hooks/rthook_win_dll_paths.py \
             --add-data "assets:assets" \
             main.py
 
@@ -54,6 +55,7 @@ jobs:
             --windowed `
             --onedir `
             --icon assets/logo.png `
+            --runtime-hook hooks/rthook_win_dll_paths.py `
             --add-data "assets;assets" `
             main.py
 

@@ -566,11 +566,14 @@ class CSVFilterSortApp(QMainWindow):
         if path:
             try:
                 hdr = self.table_view.horizontalHeader()
+                sort_order = hdr.sortIndicatorOrder()
+                if hasattr(sort_order, "value"):
+                    sort_order = sort_order.value
                 data = {
                     "filters": {str(c): e.text()
                                 for c, e in self.filter_editors.items()},
                     "sort": {"section": hdr.sortIndicatorSection(),
-                             "order": int(hdr.sortIndicatorOrder())},
+                             "order": int(sort_order)},
                 }
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=4)
@@ -593,8 +596,15 @@ class CSVFilterSortApp(QMainWindow):
                         self.filter_editors[col].setText(text)
                 s = data.get("sort", {})
                 sec = s.get("section", -1)
+                raw_order = s.get("order", 0)
+                if hasattr(raw_order, "value"):
+                    raw_order = raw_order.value
+                try:
+                    sort_order = Qt.SortOrder(int(raw_order))
+                except (TypeError, ValueError):
+                    sort_order = Qt.AscendingOrder
                 if 0 <= sec < self.model.columnCount():
-                    self.proxy_model.sort(sec, Qt.SortOrder(s.get("order", 0)))
+                    self.proxy_model.sort(sec, sort_order)
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not load:\n{e}")
 

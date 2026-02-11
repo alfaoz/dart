@@ -48,6 +48,9 @@ requires python 3.9+.
 
 you can also drag and drop files directly onto the window.
 
+for windows release zips, extract the entire archive first and run
+`DART\\DART.exe` from the extracted folder (do not run directly from inside the zip).
+
 ## how it's built
 
 pyside6 for the ui. chardet for encoding detection. openpyxl for excel files. delimiter auto-detection via python's csv sniffer. everything runs locally, nothing leaves your machine.
