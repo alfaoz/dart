@@ -33,7 +33,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
+          pip install pyinstaller pillow
 
       - name: Bundle with PyInstaller (macOS)
         if: runner.os == 'macOS'
@@ -42,7 +42,7 @@ jobs:
             --name DART \
             --windowed \
             --onedir \
-            --icon assets/logo.png \
+            --icon assets/dart.icns \
             --add-data "assets:assets" \
             main.py
 
