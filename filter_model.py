@@ -27,7 +27,14 @@ class MultiFilterProxyModel(QSortFilterProxyModel):
             cell = str(model.data(index, Qt.DisplayRole))
             stripped = ft.strip()
             if stripped.startswith("#"):
-                if not self._apply_command(stripped[1:].strip(), cell):
+                after_hash = stripped[1:].strip()
+                # Don't filter while user is still typing the command
+                if ":" not in after_hash:
+                    continue
+                cmd_name, _, arg = after_hash.partition(":")
+                if not arg.strip():
+                    continue
+                if not self._apply_command(after_hash, cell):
                     return False
             else:
                 if stripped.lower() not in cell.lower():
@@ -51,6 +58,15 @@ class MultiFilterProxyModel(QSortFilterProxyModel):
                     return False
                 lo, hi = float(parts[0]), float(parts[1])
                 return lo <= float(cell) <= hi
+            except Exception:
+                return False
+        elif lc.startswith("notrange:"):
+            try:
+                parts = cmd_text[9:].strip().split(",")
+                if len(parts) != 2:
+                    return False
+                lo, hi = float(parts[0]), float(parts[1])
+                return not (lo <= float(cell) <= hi)
             except Exception:
                 return False
         elif lc.startswith("startswith:"):

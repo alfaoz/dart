@@ -101,10 +101,17 @@ class AboutDialog(BaseDialog):
 
         self.content_layout.addStretch()
 
-        author = QLabel("Developed by Alfa Ozaltin")
+        author = QLabel('developed by <a href="https://alfaoz.dev" style="color: #3aab4e; text-decoration: none;">alfaoz</a>')
         author.setObjectName("textTertiary")
         author.setAlignment(Qt.AlignCenter)
+        author.setOpenExternalLinks(True)
         self.content_layout.addWidget(author)
+
+        gh = QLabel('<a href="https://github.com/alfaoz/dart" style="color: #5a6e60; text-decoration: none;">github.com/alfaoz/dart</a>')
+        gh.setObjectName("textTertiary")
+        gh.setAlignment(Qt.AlignCenter)
+        gh.setOpenExternalLinks(True)
+        self.content_layout.addWidget(gh)
 
         self.add_close_button()
 
@@ -138,6 +145,7 @@ class HelpDialog(BaseDialog):
         grid.setVerticalSpacing(6)
         commands = [
             ("#range: x,y",       "Numeric range (inclusive)"),
+            ("#notrange: x,y",    "Exclude numeric range"),
             ("#startswith: text",  "Cell begins with text"),
             ("#contains: text",   "Substring search"),
             ("#equals: text",     "Exact match"),
